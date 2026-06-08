@@ -1,11 +1,9 @@
 ---
-title: "AR1_DDM"
+title: "Autoregressive DDM"
 author: "Sven Wientjes"
-format: html
+format: gfm
 editor: visual
 ---
-
-# Autoregressive DDM
 
 In this document, we will discuss, fit, and evaluate a Drift Diffusion Model (DDM) with AutoRegressive (AR1) processes for it's main parameters, using the software [Stan](https://mc-stan.org/cmdstanr/), and demonstrate how this model can converge in **60 to 90 seconds** for a typical participant[^1]. This tutorial is heavily inspired by the great work of [Vloeberghs et al. (2026)](https://www.biorxiv.org/content/10.64898/2026.03.20.713186v1.abstracthttps://www.biorxiv.org/content/10.64898/2026.03.20.713186v1.abstract), who first developed this AR(1) variant of the DDM, identified a unique signature of it in terms of *temporally clustered errors*, and provided an amortized inference network to estimate the parameters based on empirical data.
 
