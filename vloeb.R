@@ -119,32 +119,35 @@ ggplot(group_stats, aes(x = er_class, y = mean_prob, fill = prev_er_class)) +
 ################################################################################
 ## Fit and inspect autocorrelated DDM ----
 DDMmod <- cmdstan_model("models/DDM_AR1.stan")
+
 PNUM   <- 69
+for(PNUM in 1:99){
+  Pdat <- MyData[pp==PNUM]
+  
+  DataList <- list(N       = nrow(Pdat),
+                   choice  = Pdat$response,
+                   stim    = Pdat$stim,
+                   y       = Pdat$rt,
+                   yi      = Pdat$yi,
+                   min_rt  = min(Pdat[yi==1]$rt))
+  
+  # Fit the model
+  fit <- DDMmod$sample( #65s, 0d
+    data            = DataList,
+    chains          = 4,
+    parallel_chains = 4,
+    adapt_delta     = 0.80,
+    max_treedepth   = 10,
+    init_buffer     = 200,
+    term_buffer     = 200,
+    window          = 25,
+    iter_warmup     = 1975,
+    iter_sampling   = 2000,
+    output_dir      = "fits/AR1",
+    output_basename = paste0("AR1_pp",formatC(PNUM,width=2,flag="0"))
+  )
+}
 
-Pdat <- MyData[pp==PNUM]
-
-DataList <- list(N       = nrow(Pdat),
-                 choice  = Pdat$response,
-                 stim    = Pdat$stim,
-                 y       = Pdat$rt,
-                 yi      = Pdat$yi,
-                 min_rt  = min(Pdat[yi==1]$rt))
-
-# Fit the model
-fit <- DDMmod$sample( #65s, 0d
-  data            = DataList,
-  chains          = 4,
-  parallel_chains = 4,
-  adapt_delta     = 0.80,
-  max_treedepth   = 10,
-  init_buffer     = 200,
-  term_buffer     = 200,
-  window          = 25,
-  iter_warmup     = 1975,
-  iter_sampling   = 2000,
-  output_dir      = "fits/AR1",
-  output_basename = paste0("AR1_pp",formatC(PNUM,width=2,flag="0"))
-)
 TheSum <- data.table(fit$summary())
 any(TheSum$rhat>1.01)
 
