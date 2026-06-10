@@ -7,14 +7,18 @@ parameters, using the software [Stan](https://mc-stan.org/cmdstanr/),
 and demonstrate how this model can converge in **60 to 90 seconds** for
 a typical participant[^1]. This tutorial is directly inspired by the
 great work of [Vloeberghs et
-al. (2026)](https://www.biorxiv.org/content/10.64898/2026.03.20.713186v1.abstracthttps://www.biorxiv.org/content/10.64898/2026.03.20.713186v1.abstract),
+al. (2026)](https://www.biorxiv.org/content/10.64898/2026.03.20.713186v1.abstract),
 who first developed this AR(1) variant of the DDM, identified a unique
 signature of it in terms of *temporally clustered errors*, and provided
 an Amortized Bayesian Inference (ABI) network to estimate the parameters
 based on empirical data.
 
-By implementing the model in Stan, we can get a couple of advantages
-compared to an ABI implementation:
+The major advantage of ABI is that after an expensive training phase,
+inference for different participants or datasets becomes nearly
+instantaneous, giving it good scaling to large datasets. Nevertheless,
+by implementing the model in Stan, we can get a couple of distinct
+advantages compared to an ABI implementation, albeit at the cost of
+slightly longer inference times:
 
 1.  Amortized inference is not exact. Even though the parameter recovery
     *can* be highly accurate, no mathematical *guarantee* exists that we
@@ -51,7 +55,40 @@ standard formulation of the DDM, the probability of hitting the upper
 boundary at time $y$ can be computed with the [Wiener first passtime
 distribution](https://mc-stan.org/docs/functions-reference/positive_lower-bounded_distributions.html#wiener-first-passage-time-distribution):
 
-$\frac{\alpha3}{(y-\tau)^{3/2}} e^{-\delta \alpha \beta - \frac{\delta^2(y-\tau)}{2}}\sum_{k=-\infty}^\infty (2k+\beta)\phi(\frac{2k\alpha+\beta}{\sqrt{y-\tau}})$
+$p(y|\delta, \alpha, \beta, \tau) = \frac{\alpha3}{(y-\tau)^{3/2}} e^{-\delta \alpha \beta - \frac{\delta^2(y-\tau)}{2}}\sum_{k=-\infty}^\infty (2k+\beta)\phi(\frac{2k\alpha+\beta}{\sqrt{y-\tau}})$
+
+To turn this 4-parameter variant of the DDM into an AR(1) variant, we
+will make the drift rate $\delta$, starting point $\beta$, and boundary
+separation $\alpha$ fluctuate over trials $t$. These parameters now
+consist of a fixed component and a fluctuating component:
+
+$\delta_t = \delta + \gamma_t$
+
+$\beta_t = \beta + \zeta_t$
+
+$\alpha_t = \alpha + \xi_t$
+
+These fluctuating components $\gamma_t$, $\zeta_t$, and $\xi_t$,
+fluctuate according to an AR(1) process:
+
+$\gamma_t = \rho_\gamma \gamma_{t-1} + \epsilon_{\gamma, t}$ with
+$\epsilon_{\gamma, t} \sim \mathcal{N}(0,\sigma_\gamma^2)$
+
+$\zeta_t = \rho_\zeta \zeta_{t-1} + \epsilon_{\zeta, t}$ with
+$\epsilon_{\zeta, t} \sim \mathcal{N}(0,\sigma_\zeta^2)$
+
+$\xi_t = \rho_\xi \xi_{t-1} + \epsilon_{\xi, t}$ with
+$\epsilon_{\xi, t} \sim \mathcal{N}(0,\sigma_\xi^2)$
+
+with $\rho$ being the *autoregressive coefficient* determining the
+correlation over time, and $\sigma$ being the *innovation variance*
+determining the scale of the fluctuations over time. Note that this
+formulation implies parameters $\epsilon$ that are different for each
+trial $t$. What makes fitting the AR(1) process tricky, is that if we
+have a dataset with 100 trials in it, and three parameters that
+fluctuate over trials, we will need 300 parameters to fit this model!
+This sounds daunting, but is actually a case that Stan can handle very
+well, as we will see.
 
 ## Exploring the data
 
@@ -183,8 +220,8 @@ $\epsilon_{\gamma, t} \sim  \mathcal{N}(0, \sigma^2)$
 
 but this formulation yields a total stationary variance of
 $Var(X) = \frac{\sigma^2}{1-\rho^2}$. This means that the variance
-changes unpredictably whenever $\rho$ or $\sigma^2$ change. Stan does
-not like these kind of dependencies, but luckily we can separate them.
+changes unpredictably whenever $\rho$ or $\sigma$ change. Stan does not
+like these kind of dependencies, but luckily we can separate them.
 
 We can fix the variance of the latent state $X_t$ over time to be
 exactly 1. We can do this by drawing standard normal innovations
@@ -193,10 +230,10 @@ $Z_t \sim \mathcal{N}(0,1)$ and scaling them by $\sqrt{1-\rho^2}$ :
 $X_t = \rho X_{t-1} + \sqrt{1-\rho^2} Z_t$
 
 We can then make whatever parameter we want dependent on this
-standardized latent state, and include a separate parameter $\sigma$ to
-scale this latent state. For example, for the drift rates:
+standardized latent state, and only later introduce parameter $\sigma$
+to scale this latent state. For example, for the drift rates:
 
-$\delta_t = \delta + \sigma_\delta \gamma_{t}$
+$\delta_t = \delta + \sigma_\delta^2 \gamma_{t}$
 
 where now the fluctuations of drift rate $\gamma_t$ are implemented the
 same way we described the dynamics above for $X_t$. This

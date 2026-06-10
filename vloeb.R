@@ -121,7 +121,7 @@ ggplot(group_stats, aes(x = er_class, y = mean_prob, fill = prev_er_class)) +
 DDMmod <- cmdstan_model("models/DDM_AR1.stan")
 
 PNUM   <- 69
-for(PNUM in 1:99){
+for(PNUM in 99:99){
   Pdat <- MyData[pp==PNUM]
   
   DataList <- list(N       = nrow(Pdat),
@@ -196,5 +196,18 @@ ggplot() +
   geom_density(data=MyData[pp==PNUM&yi==1], aes(x=rt), linetype="dashed",linewidth=1) +
   geom_density(data=SIM[rt>0.1&rt<3.0],aes(x=rt))
 
+################################################################################
+## Check Rhat and ESS for fits ----
+for(PNUM in 14:99){
+  DDMfit <- as_cmdstan_fit(paste0("fits/AR1/AR1_pp",formatC(PNUM,width=2,flag="0"),"-",1:4,".csv"))
+  TheSum <- DDMfit$summary()
+  print(paste0("---- PP",formatC(PNUM,width=2,flag="0")," ----"))
+  print("BAD RHAT:")
+  print(which(TheSum$rhat > 1.01))
+  print("BAD ESS BULK:")
+  print(which(TheSum$ess_bulk < 1000))
+  print("BAD ESS TAIL:")
+  print(which(TheSum$ess_tail < 1000))
+}
 
 
