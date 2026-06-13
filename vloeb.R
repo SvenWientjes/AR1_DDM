@@ -210,4 +210,13 @@ for(PNUM in 14:99){
   print(which(TheSum$ess_tail < 1000))
 }
 
+# Sample from every participant
+for(PNUM in 1:99){
+  DDMfit <- as_cmdstan_fit(paste0("fits/AR1/AR1_pp",formatC(PNUM,width=2,flag="0"),"-",1:4,".csv"))
+  
+  v_draws  <- DDMfit$draws("v",format="matrix")[,]
+  w_draws  <- DDMfit$draws("w",format="matrix")[,]
+  a_draws  <- DDMfit$draws("a",format="matrix")[,]
+  t0_draws <- DDMfit$draws("t0",format="matrix")[,]
+}
 

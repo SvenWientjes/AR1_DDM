@@ -2,11 +2,16 @@
 Sven Wientjes
 
 In this document, we will discuss, fit, and evaluate a Drift Diffusion
-Model (DDM) with AutoRegressive (AR1) processes for it’s main
+Model (DDM) with auto-regressive (AR1) processes for it’s main
 parameters, using the software [Stan](https://mc-stan.org/cmdstanr/),
 and demonstrate how this model can converge in **60 to 90 seconds** for
-a typical participant[^1]. This tutorial is directly inspired by the
-great work of [Vloeberghs et
+a typical participant without any sophisticated parallel computing. This
+is much faster than the typical variability-incorporating 6 (or 7)
+parameter DDM will converge with Stan, which took me about 4500 seconds
+(~1 hour 15 minutes) without parallel computing to draw the same number
+of samples[^1].
+
+This tutorial is directly inspired by the great work of [Vloeberghs et
 al. (2026)](https://www.biorxiv.org/content/10.64898/2026.03.20.713186v1.abstract),
 who first developed this AR(1) variant of the DDM, identified a unique
 signature of it in terms of *temporally clustered errors*, and provided
@@ -86,9 +91,9 @@ determining the scale of the fluctuations over time. Note that this
 formulation implies parameters $\epsilon$ that are different for each
 trial $t$. What makes fitting the AR(1) process tricky, is that if we
 have a dataset with 100 trials in it, and three parameters that
-fluctuate over trials, we will need 300 parameters to fit this model!
-This sounds daunting, but is actually a case that Stan can handle very
-well, as we will see.
+fluctuate over trials, we will need 300 parameters to capture these
+fluctuations! This sounds daunting, but is actually a case that Stan can
+handle very well, as we will see.
 
 ## Exploring the data
 
@@ -180,7 +185,7 @@ another error responding with `-1`) as well as by speed (i.e., slow
 errors tend to occur successively, and fast errors tend to occur
 successively). A typical 4-parameter DDM treats each trial as
 independent and identically distributed. This means that preceding
-errors bear no relation to successive error responses by definition.
+errors bear no relation to successive error responses by design.
 
 ``` r
 group_stats <- get_error_cor(MyData)
@@ -220,7 +225,7 @@ $\epsilon_{\gamma, t} \sim  \mathcal{N}(0, \sigma^2)$
 
 but this formulation yields a total stationary variance of
 $Var(X) = \frac{\sigma^2}{1-\rho^2}$. This means that the variance
-changes unpredictably whenever $\rho$ or $\sigma$ change. Stan does not
+changes interactively whenever $\rho$ or $\sigma$ change. Stan does not
 like these kind of dependencies, but luckily we can separate them.
 
 We can fix the variance of the latent state $X_t$ over time to be
@@ -233,7 +238,7 @@ We can then make whatever parameter we want dependent on this
 standardized latent state, and only later introduce parameter $\sigma$
 to scale this latent state. For example, for the drift rates:
 
-$\delta_t = \delta + \sigma_\delta^2 \gamma_{t}$
+$\delta_t = \delta + \sigma_\gamma^2 \gamma_{t}$
 
 where now the fluctuations of drift rate $\gamma_t$ are implemented the
 same way we described the dynamics above for $X_t$. This
@@ -243,12 +248,167 @@ Stan.
 
 ### Actually fitting the model
 
-Bla.
+The code below is what I used to fit the model. Unfortunately, I
+couldn’t host the files with the samples on GitHub, as they are too
+large. To continue with the tutorial, you can either run this fit
+yourself, or download a .rar file with my fits here. Unpack these into
+`fits/AR1` to continue.
+
+``` r
+# Load the Stan model
+DDMmod <- cmdstan_model("models/DDM_AR1.stan")
+
+# Loop over paraticipants to fit
+for(PNUM in 1:99){
+  Pdat <- MyData[pp==PNUM]
+  
+  DataList <- list(N       = nrow(Pdat),
+                   choice  = Pdat$response,
+                   stim    = Pdat$stim,
+                   y       = Pdat$rt,
+                   yi      = Pdat$yi,
+                   min_rt  = min(Pdat[yi==1]$rt))
+  
+  # Fit the model
+  fit <- DDMmod$sample(
+    data            = DataList,
+    chains          = 4,
+    parallel_chains = 4,
+    adapt_delta     = 0.80,
+    max_treedepth   = 10,
+    init_buffer     = 200,
+    term_buffer     = 200,
+    window          = 25,
+    iter_warmup     = 1975,
+    iter_sampling   = 2000,
+    output_dir      = "fits/AR1",
+    output_basename = paste0("AR1_pp",formatC(PNUM,width=2,flag="0"))
+  )
+}
+```
+
+We can also evaluate the success of these fits, by checking for every
+parameter whether $\hat{R} < 1.01$, and whether $ESS_{bulk} > 1000$ and
+$ESS_{tail} > 1000$. Below I print results for participant 1 and
+participant 99. You can change this to evaluate every participant, but
+beware of long run times:
+
+``` r
+PNUM <- c(1,99) # make 1:99 to evaluate all
+for(p in PNUM){
+  DDMfit <- as_cmdstan_fit(paste0("fits/AR1/AR1_pp",formatC(p,width=2,flag="0"),"-",1:4,".csv"))
+  TheSum <- DDMfit$summary()
+  print(paste0("---- PP",formatC(p,width=2,flag="0")," ----"))
+  print("BAD RHAT:")
+  print(which(TheSum$rhat > 1.01))
+  print("BAD ESS BULK:")
+  print(which(TheSum$ess_bulk < 1000))
+  print("BAD ESS TAIL:")
+  print(which(TheSum$ess_tail < 1000))
+}
+```
+
+    [1] "---- PP01 ----"
+    [1] "BAD RHAT:"
+    integer(0)
+    [1] "BAD ESS BULK:"
+    integer(0)
+    [1] "BAD ESS TAIL:"
+    integer(0)
+    [1] "---- PP99 ----"
+    [1] "BAD RHAT:"
+    integer(0)
+    [1] "BAD ESS BULK:"
+    integer(0)
+    [1] "BAD ESS TAIL:"
+    integer(0)
+
+``` r
+# Remove large objects for caching
+rm(DDMfit,TheSum);gc(verbose=FALSE)
+```
+
+              used (Mb) gc trigger   (Mb)  max used   (Mb)
+    Ncells 1208493 64.6    2372617  126.8   2372617  126.8
+    Vcells 2572864 19.7  175798296 1341.3 187949400 1434.0
+
+The returned `integer(0)` means that no parameters had bad $\hat{R}$ or
+$ESS$. Note that this checks not only the global parameters $\delta$,
+$\beta$, $\alpha$, and $\tau$, but also for each trial the local
+fluctuations $\gamma_t$, $\zeta_t$, $\xi_t$.
 
 ## Exploring the fit
 
-bla.
+Let’s first get an intuition for what the AR(1) process does to our
+parameters. In the notation of our Stan model, we have drift rate `v`,
+bias `w`, and boundary separation `a` that vary over time. We can plot
+the posterior means of these parameters for each of the 500 trials for a
+single participant. We can also overlay a smooth loess fit, to inspect
+any structural changes in parameters that may not be obvious from the
+trial-by-trial noise:
 
-## 
+``` r
+# Select & load participant fit
+PNUM <- 1
+DDMfit <- as_cmdstan_fit(paste0("fits/AR1/AR1_pp",formatC(PNUM,width=2,flag="0"),"-",1:4,".csv"))
+
+# Extract parameters and compute posterior means
+v_draws  <- apply(DDMfit$draws("v",format="matrix"),2,mean)
+w_draws  <- apply(DDMfit$draws("w",format="matrix"),2,mean)
+a_draws  <- apply(DDMfit$draws("a",format="matrix"),2,mean)
+
+# Combine into a single data.table for plotting
+plot_draws <- data.table(t = rep(1:500,3),
+                         p = rep(c("v","w","a"),each=500),
+                         y = c(v_draws,w_draws,a_draws))
+
+# Plot
+ggplot(plot_draws, aes(x=t,y=y)) +
+  facet_wrap(.~p,scales="free") +
+  geom_line() +
+  geom_smooth() +
+  theme_minimal()
+```
+
+![](README_files/figure-commonmark/unnamed-chunk-8-1.png)
+
+``` r
+# Remove large objects for caching
+rm(DDMfit,v_draws,w_draws,a_draws,plot_draws);gc(verbose=FALSE)
+```
+
+              used  (Mb) gc trigger  (Mb)  max used   (Mb)
+    Ncells 2334520 124.7    4435780 236.9   4435780  236.9
+    Vcells 4559062  34.8   90008728 686.8 187949400 1434.0
+
+We can see strong structural changes over time in the boundary
+separation `a` for this participant, and weaker but notable increases in
+drift rate `v`. We also see a slight drift in response bias `w` with
+some distinct moments of spiking.
+
+### Simulating data for posterior predictive checking
+
+We will simulate data from the posterior for each participant, trimming
+the posterior distribution down to 500 samples (from the original 8000).
+
+### PPC of the CAF
+
+Bla.
+
+### PPC of clustered errors
+
+Bla.
+
+## Conclusion
+
+It appears that parameterizing the DDM with local fluctuations according
+to an AR(1) process is much more effective in Stan, compared to relying
+on between-trial variability variants of the DDM likelihood itself. Not
+only do we get faster fits this way, we can also capture local patterns
+in errors as argued by Vloeberghs et al. Extensions of this work should
+focus on recoverability of the latent trajectories, and developing
+hierarchical Bayesian implementations of this model that partially pool
+global parameters $\delta$, $\beta$, $\alpha$, $\tau$, $\rho$ and
+$\sigma$ across participants in the same experiment.
 
 [^1]: Results obtained using an AMD Ryzen 7 7700 CPU.
