@@ -391,10 +391,101 @@ some distinct moments of spiking.
 
 We will simulate data from the posterior for each participant, trimming
 the posterior distribution down to 500 samples (from the original 8000).
+This takes a while, so I will show the code here. You can run this code,
+or download `simulations.csv.gz` into the `simulations/` folder from
+[here](https://doi.org/10.5281/zenodo.20687339).
+
+``` r
+# Number of simulations
+N_sims       <- 500
+total_sims   <- N_sims * 500 # 500 trials
+
+# Prepare for simulations
+SIM_list     <- list()
+downsamp_idx <- round(seq(1,8000,length.out=N_sims))
+
+# Do simulations
+for(PNUM in 1:99){
+  print(paste0("=================================="))
+  print(paste0("Simulating participant ",PNUM,"/99"))
+  
+  # Get participant data and fit
+  Pdat   <- MyData[pp==PNUM]
+  DDMfit <- as_cmdstan_fit(paste0("fits/AR1/AR1_pp",formatC(PNUM,width=2,flag="0"),"-",1:4,".csv"))
+  
+  # Get parameters over time
+  v_draws  <- DDMfit$draws("v",format="matrix")[downsamp_idx,]
+  w_draws  <- DDMfit$draws("w",format="matrix")[downsamp_idx,]
+  a_draws  <- DDMfit$draws("a",format="matrix")[downsamp_idx,]
+  t0_draws <- DDMfit$draws("t0",format="matrix")[downsamp_idx,]
+  
+  # Prepare for simulating Choice-RTs
+  sim_rt     <- numeric(total_sims)
+  sim_choice <- character(total_sims)
+  was_dir    <- character(total_sims)
+  si         <- 1
+  
+  # Simulate Choice-RTs
+  for(s in 1:N_sims){
+    print(paste0("    Simulating sample ",s,"/",dim(v_draws)[1]))
+    for(t in 1:dim(v_draws)[2]){
+      v_trial <- Pdat[t,stim] * v_draws[s,t]
+      simed   <- rwiener(n=1,
+                         alpha = a_draws[s,t],
+                         tau   = t0_draws[s],
+                         beta  = w_draws[s,t],
+                         delta = v_trial)
+      sim_rt[si]     <- simed$q
+      sim_choice[si] <- as.character(simed$resp)
+      was_dir[si]    <- if(Pdat[t,stim]>0){"upper"}else{"lower"}
+      si             <- si+1
+    }
+  }
+  # Store in list
+  SIM_list[[PNUM]] <- data.table(
+    p       = PNUM,
+    sim     = rep(1:N_sims, each = dim(v_draws)[2]),
+    t       = rep(1:dim(v_draws)[2], N_sims),
+    rt      = sim_rt,
+    choice  = sim_choice,
+    was_dir = was_dir,
+    correct = sim_choice==was_dir
+  )
+}
+
+# Turn list into data.table
+SIM <- rbindlist(SIM_list)
+
+# Save lightweight .csv.gz
+fwrite(SIM, "simulations/simulations.csv.gz", compress = "gzip", compressLevel = 9)
+```
+
+### PPC of RT distribution
+
+Let’s see how well the model can match the RT distribution we visualized
+for a single specific participant before:
+
+``` r
+# Load simulations
+SIM <- fread("simulations/simulations.csv.gz")
+
+# Get participant & valid trials
+Pdat <- MyData[pp==69&yi==1]
+Psim <- SIM[p==69&rt>0.1&rt<3.0]
+
+# Plot RT distributions
+ggplot() +
+  geom_density(data=Pdat,aes(x=rt),linetype="dashed",linewidth=1) +
+  geom_density(data=Psim,aes(x=rt),linetype="dotdash",linewidth=1,color="orange") +
+  theme_minimal()
+```
+
+![](README_files/figure-commonmark/unnamed-chunk-10-1.png)
 
 ### PPC of the CAF
 
-Bla.
+We can get a posterior distribution over the CAF points, and compare
+that to the empirical CAF
 
 ### PPC of clustered errors
 
@@ -404,12 +495,13 @@ Bla.
 
 It appears that parameterizing the DDM with local fluctuations according
 to an AR(1) process is much more effective in Stan, compared to relying
-on between-trial variability variants of the DDM likelihood itself. Not
-only do we get faster fits this way, we can also capture local patterns
-in errors as argued by Vloeberghs et al. Extensions of this work should
-focus on recoverability of the latent trajectories, and developing
-hierarchical Bayesian implementations of this model that partially pool
-global parameters $\delta$, $\beta$, $\alpha$, $\tau$, $\rho$ and
-$\sigma$ across participants in the same experiment.
+on between-trial variability variants of the DDM likelihood itself
+(i.e., 6- or 7-parameter DDM). Not only do we get faster fits this way,
+we can also capture local patterns in errors as argued by Vloeberghs et
+al. Extensions of this work should focus on recoverability of the latent
+trajectories, and developing hierarchical Bayesian implementations of
+this model that partially pool global parameters $\delta$, $\beta$,
+$\alpha$, $\tau$, $\rho$ and $\sigma$ across participants in the same
+experiment.
 
 [^1]: Results obtained using an AMD Ryzen 7 7700 CPU.

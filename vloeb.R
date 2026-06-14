@@ -211,12 +211,97 @@ for(PNUM in 14:99){
 }
 
 # Sample from every participant
+N_sims       <- 500
+total_sims   <- N_sims * 500
+SIM_list     <- list()
+downsamp_idx <- round(seq(1,8000,length.out=N_sims))
 for(PNUM in 1:99){
+  print(paste0("=================================="))
+  print(paste0("Simulating participant ",PNUM,"/99"))
+  
+  # Get participant data and fit
+  Pdat   <- MyData[pp==PNUM]
   DDMfit <- as_cmdstan_fit(paste0("fits/AR1/AR1_pp",formatC(PNUM,width=2,flag="0"),"-",1:4,".csv"))
   
-  v_draws  <- DDMfit$draws("v",format="matrix")[,]
-  w_draws  <- DDMfit$draws("w",format="matrix")[,]
-  a_draws  <- DDMfit$draws("a",format="matrix")[,]
-  t0_draws <- DDMfit$draws("t0",format="matrix")[,]
+  # Get parameters over time
+  v_draws  <- DDMfit$draws("v",format="matrix")[downsamp_idx,]
+  w_draws  <- DDMfit$draws("w",format="matrix")[downsamp_idx,]
+  a_draws  <- DDMfit$draws("a",format="matrix")[downsamp_idx,]
+  t0_draws <- DDMfit$draws("t0",format="matrix")[downsamp_idx,]
+  
+  # Get simulated choice/RTs
+  sim_rt     <- numeric(total_sims)
+  sim_choice <- character(total_sims)
+  was_dir    <- character(total_sims)
+  
+  si <- 1
+  for(s in 1:N_sims){
+    print(paste0("    Simulating sample ",s,"/",dim(v_draws)[1]))
+    for(t in 1:dim(v_draws)[2]){
+      v_trial <- Pdat[t,stim] * v_draws[s,t]
+      simed   <- rwiener(n=1,
+                         alpha = a_draws[s,t],
+                         tau   = t0_draws[s],
+                         beta  = w_draws[s,t],
+                         delta = v_trial)
+      sim_rt[si]     <- simed$q
+      sim_choice[si] <- as.character(simed$resp)
+      was_dir[si]    <- if(Pdat[t,stim]>0){"upper"}else{"lower"}
+      si             <- si+1
+    }
+  }
+  SIM_list[[PNUM]] <- data.table(
+    p     = PNUM,
+    sim   = rep(1:N_sims, each = dim(v_draws)[2]),
+    t     = rep(1:dim(v_draws)[2], N_sims),
+    rt     = sim_rt,
+    choice = sim_choice,
+    was_dir = was_dir,
+    correct = sim_choice==was_dir
+  )
 }
+SIM <- rbindlist(SIM_list)
+fwrite(SIM, "simulations/simulations.csv.gz", compress = "gzip", compressLevel = 9)
+
+
+
+thesim <- fread("simulations/simulations.csv.gz")
+
+
+plot(density(SIM[p==69&rt>0.1&rt<3.0]$rt))
+
+
+Pdat <- MyData[pp==15&yi==1]
+Psim <- SIM[p==15&rt>0.1&rt<3.0]
+
+ggplot() +
+  geom_density(data=Pdat,aes(x=rt),linetype="dashed",linewidth=1) +
+  geom_density(data=Psim,aes(x=rt),linetype="dotdash",linewidth=1,color="orange") +
+  theme_minimal()
+
+
+
+## Simulated CAF
+SIM[,stim:=rep(MyData$stim,N_sims)]
+SIM$cor <- 0
+SIM[stim==1&choice==1,cor:=1]
+SIM[stim==-1&choice==2,cor:=1]
+
+CAFlist <- list()
+for(simje in 1:SIM[,max(sim)]){
+  
+  # Assign stimulus identity and correctness
+  insim <- SIM[sim==simje]
+  insim[,stim:=MyData$stim]
+  insim$cor <- 0
+  insim[stim==1&choice==1,cor:=1]
+  insim[stim==-1&choice==2,cor:=1]
+  
+  CAFlist[[simje]] <- calculate_group_caf(SIM[sim==simje], "rt", "cor", "p", num_bins=7)
+}
+CAF_sim <- rbindlist(CAFlist)
+
+
+calculate_group_caf(SIM[sim==1], "rt", "cor", "p", num_bins=7)
+
 
