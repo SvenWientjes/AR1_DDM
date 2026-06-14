@@ -251,8 +251,9 @@ Stan.
 The code below is what I used to fit the model. Unfortunately, I
 couldn’t host the files with the samples on GitHub, as they are too
 large. To continue with the tutorial, you can either run this fit
-yourself, or download a .rar file with my fits here. Unpack these into
-`fits/AR1` to continue.
+yourself, or [download a .7zip file with my fits
+here](https://doi.org/10.5281/zenodo.20687338). Unpack the .csv files
+into `fits/AR1` to continue.
 
 ``` r
 # Load the Stan model
