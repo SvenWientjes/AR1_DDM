@@ -351,9 +351,55 @@ ggplot() +
   theme_minimal()
 ```
 
+That is not too bad! Let's look at another one:
+
+```{r}
+
+# Get participant & valid trials
+Pdat <- MyData[pp==15&yi==1]
+Psim <- SIM[p==15&rt>0.1&rt<3.0]
+
+# Plot RT distributions
+ggplot() +
+  geom_density(data=Pdat,aes(x=rt),linetype="dashed",linewidth=1) +
+  geom_density(data=Psim,aes(x=rt),linetype="dotdash",linewidth=1,color="orange") +
+  theme_minimal()
+```
+
+That is not too great... Unfortunately quite common with the DDM.
+
 ### PPC of the CAF
 
-We can get a posterior distribution over the CAF points, and compare that to the empirical CAF
+We can get a posterior distribution over the CAF points:
+
+```{r}
+
+# Get simulated CAF
+CAFlist <- list()
+for(simje in 1:SIM[,max(sim)]){
+  CAFlist[[simje]] <- calculate_group_caf(SIM[sim==simje&rt>0.1&rt<3.0], "rt", "correct", "p", num_bins=7)
+}
+CAF_sim <- rbindlist(CAFlist)
+
+# Get posterior over CAF points
+CAF_ppc <- CAF_sim[,list(min_rt = bayestestR::hdi(mean_rt)$CI_low,
+                         max_rt = bayestestR::hdi(mean_rt)$CI_high,
+                         med_rt = median(mean_rt),
+                         min_ac = bayestestR::hdi(mean_acc)$CI_low,
+                         max_ac = bayestestR::hdi(mean_acc)$CI_high,
+                         med_ac = median(mean_acc)),
+        by=rt_bin]
+
+# Plot
+ggplot(CAF_ppc, aes(xmin=min_rt,xmax=max_rt,x=med_rt,y=med_ac,ymin=min_ac,ymax=max_ac)) +
+  geom_line() +
+  geom_errorbar() + 
+  geom_errorbarh() +
+  theme_minimal() +
+  xlab("RT") + ylab("Accuracy")
+```
+
+It seems like we are capturing fast errors, but not slow errors with this model...
 
 ### PPC of clustered errors
 

@@ -167,7 +167,7 @@ ggplot() +
 
 
 
-total_sims <- 500 * dim(v_draws)[2] # replace 500 everywhere with dim(v_draws)[1]
+total_sims <- 500 * 500 # replace 500 everywhere with dim(v_draws)[1]
 sim_rt     <- numeric(total_sims)
 sim_choice <- character(total_sims)
 si <- 1
@@ -271,8 +271,8 @@ thesim <- fread("simulations/simulations.csv.gz")
 plot(density(SIM[p==69&rt>0.1&rt<3.0]$rt))
 
 
-Pdat <- MyData[pp==15&yi==1]
-Psim <- SIM[p==15&rt>0.1&rt<3.0]
+Pdat <- MyData[pp==69&yi==1]
+Psim <- SIM[p==69&rt>0.1&rt<3.0]
 
 ggplot() +
   geom_density(data=Pdat,aes(x=rt),linetype="dashed",linewidth=1) +
@@ -281,25 +281,28 @@ ggplot() +
 
 
 
-## Simulated CAF
-SIM[,stim:=rep(MyData$stim,N_sims)]
-SIM$cor <- 0
-SIM[stim==1&choice==1,cor:=1]
-SIM[stim==-1&choice==2,cor:=1]
+
 
 CAFlist <- list()
 for(simje in 1:SIM[,max(sim)]){
-  
-  # Assign stimulus identity and correctness
-  insim <- SIM[sim==simje]
-  insim[,stim:=MyData$stim]
-  insim$cor <- 0
-  insim[stim==1&choice==1,cor:=1]
-  insim[stim==-1&choice==2,cor:=1]
-  
-  CAFlist[[simje]] <- calculate_group_caf(SIM[sim==simje], "rt", "cor", "p", num_bins=7)
+  CAFlist[[simje]] <- calculate_group_caf(SIM[sim==simje&rt>0.1&rt<3.0], "rt", "correct", "p", num_bins=7)
 }
 CAF_sim <- rbindlist(CAFlist)
+
+CAF_ppc <- CAF_sim[,list(min_rt = bayestestR::hdi(mean_rt)$CI_low,
+                         max_rt = bayestestR::hdi(mean_rt)$CI_high,
+                         med_rt = median(mean_rt),
+                         min_ac = bayestestR::hdi(mean_acc)$CI_low,
+                         max_ac = bayestestR::hdi(mean_acc)$CI_high,
+                         med_ac = median(mean_acc)),
+        by=rt_bin]
+
+ggplot(CAF_ppc, aes(xmin=min_rt,xmax=max_rt,x=med_rt,y=med_ac,ymin=min_ac,ymax=max_ac)) +
+  geom_line() +
+  geom_errorbar() + 
+  geom_errorbarh() +
+  theme_minimal() +
+  xlab("RT") + ylab("Accuracy")
 
 
 calculate_group_caf(SIM[sim==1], "rt", "cor", "p", num_bins=7)
