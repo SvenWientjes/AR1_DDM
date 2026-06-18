@@ -537,19 +537,67 @@ this model…
 
 ### PPC of clustered errors
 
-Bla.
+We can look at the pattern of correlated errors for the AR(1) DDM:
+
+``` r
+# Wrangle variable names to match empirical data
+SIM[,cor:=correct]; SIM$yi <- 1; SIM[,pp:=p];
+SIM$stim <- -99
+SIM[was_dir=="upper",stim:=1]; SIM[was_dir=="lower",stim:=-1]
+
+# Run posterior simulations
+ERlist <- list()
+for(simje in 1:SIM[,max(sim)]){
+  ERlist[[simje]] <- get_error_cor(SIM[sim==simje])
+}
+ER_sim <- rbindlist(ERlist)
+
+# Aggregate over simulations
+ER_ppc <- ER_sim[,list(mean_prob = mean(mean_prob),
+                       low_prob  = bayestestR::hdi(mean_prob)$CI_low,
+                       high_prob = bayestestR::hdi(mean_prob)$CI_high),
+                 by=.(er_class,prev_er_class)]
+
+# Plot
+ggplot(ER_ppc, aes(x = er_class, y = mean_prob, fill = prev_er_class)) +
+  geom_bar(
+    stat     = "identity", 
+    position = position_dodge(width = 0.9), 
+    color    = "black", 
+    lwd = 0.3
+  ) +
+  geom_errorbar(
+    aes(ymin     = low_prob, ymax = high_prob),
+    position = position_dodge(width = 0.9),
+    width    = 0.25, # Width of the error bar caps
+    color    = "grey30"
+  ) +
+  scale_fill_brewer(palette = "Set2", name = "Previous Error Class") +
+  theme_minimal() +
+  xlab("Error class") + ylab("Probability of previous error class") +
+  theme(legend.position="top")
+```
+
+![](README_files/figure-commonmark/unnamed-chunk-13-1.png)
+
+This reveals some structure: Specifically, the model can (weakly)
+capture correlated error speeds. Fast errors are somewhat more likely
+preceded by fast errors, and slow errors are somewhat more likely
+preceded by slow errors. However, we did not appear to capture
+correlated error structure in terms of response identity.
 
 ## Conclusion
 
 It appears that parameterizing the DDM with local fluctuations according
-to an AR(1) process is much more effective in Stan, compared to relying
-on between-trial variability variants of the DDM likelihood itself
-(i.e., 6- or 7-parameter DDM). Not only do we get faster fits this way,
-we can also capture local patterns in errors as argued by Vloeberghs et
-al. Extensions of this work should focus on recoverability of the latent
-trajectories, and developing hierarchical Bayesian implementations of
-this model that partially pool global parameters $\delta$, $\beta$,
-$\alpha$, $\tau$, $\rho$ and $\sigma$ across participants in the same
-experiment.
+to an AR(1) process is much faster in Stan, compared to relying on
+between-trial variability variants of the DDM likelihood itself (i.e.,
+6- or 7-parameter DDM). This allows for capturing some of the correlated
+error patterns described by Vloeberghs et al. However, we do not
+adequately capture fast and slow error simultaneously; instead, we only
+capture slow errors. Vloeberghs et al. ABC implenetation instead mostly
+captured fast errors. This is an interesting distinction, perhaps worth
+of further exploration. First of all, extensions of this work should
+focus on assessing the recoverability of the parameters and their latent
+trajectories.
 
 [^1]: Results obtained using an AMD Ryzen 7 7700 CPU.
